@@ -7,7 +7,6 @@ BUFFER          = 1024
 
 def create_query(domain_name):
     query = DNSRecord.question(domain_name)
-    print(query.ttl)
     return query.pack()
 
 def parse_response(message):

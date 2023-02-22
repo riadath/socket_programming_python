@@ -1,4 +1,5 @@
 import socket
+import time
 from dnslib.dns import *
 
 
@@ -22,6 +23,7 @@ def send_request(UDPClientSocket):
         dns_query       = input("Enter DNS query : ")
         byte_encode     = create_query(dns_query)
         flag = False
+        init_time = int(time.perf_counter() * 1000000)
         while not flag:
             #send to server
             UDPClientSocket.sendto(byte_encode, SERVER_PORT)
@@ -46,6 +48,8 @@ def send_request(UDPClientSocket):
 
 
                 byte_encode = create_query(response)
+        end_time = int(time.perf_counter() * 1000000)
+        print("TOTAL TIME REQUIRED(ITERATIVE) : ",int(end_time - init_time), "MICROSECONDS")
                 
 def main():
     UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)

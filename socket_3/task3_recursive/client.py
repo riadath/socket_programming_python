@@ -1,4 +1,5 @@
 import socket
+import time
 from dnslib.dns import *
 
 
@@ -38,8 +39,12 @@ def main():
     UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
     while True:
         dns_query = input("Enter DNS query: ")
+        init_time = int(time.perf_counter() * 1000000)
         ip_address = resolve_dns(UDPClientSocket, dns_query)
+        end_time = int(time.perf_counter() * 1000000)
+        print("TOTAL TIME REQUIRED(ITERATIVE) : ",int(end_time - init_time), "MICROSECONDS")
         print("IP address:", ip_address)
+
 
 if __name__ == "__main__":
     main()

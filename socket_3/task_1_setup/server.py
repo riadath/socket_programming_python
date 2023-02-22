@@ -47,7 +47,10 @@ def server_start(UDPServerSocket):
     while(True):
         #receiving from client
         message,address = UDPServerSocket.recvfrom(BUFFER)
+        print("\n\nRECEIVED DATA(BYTEARRAY)\n____________________\nBYTEARRY : ",message)
         message = DNSRecord.parse(message)
+
+        print("\n\nRECEIVED QUERY(PARSED)\n____________________\nBYTEARRY : ",message)
 
         domain_name,record_list = parse_query(message)
 
@@ -58,8 +61,6 @@ def server_start(UDPServerSocket):
         resource_record = record_list[random.randrange(max(1,len(record_list) - 1))]
         response = create_response(domain_name,resource_record)
         UDPServerSocket.sendto(response,address)
-
-
 
 
 def main():

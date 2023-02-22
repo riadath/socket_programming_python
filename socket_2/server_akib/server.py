@@ -7,14 +7,14 @@ ServerSideSocket = socket.socket()
 host = '10.33.2.97'
 port = 2037
 ThreadCount = 0
-
 try:
     ServerSideSocket.bind((host, port))
-except socket.error as e:
+except Exception as e:
     print(str(e))
 
 print('Socket is listening..')
 ServerSideSocket.listen(5)
+
 
 
 def multi_threaded_client(connection):

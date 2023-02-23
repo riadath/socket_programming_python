@@ -4,14 +4,14 @@ clientSocket = socket.socket()
 
 HOST = '127.0.0.1'
 PORT = 869
-BUFFER_SIZE = 4
-HEADER_SIZE = 20
+
 print('Waiting for connection response')
 try:
     clientSocket.connect((HOST, PORT))
 except socket.error as e:
     print(str(e))
-res = clientSocket.recv(BUFFER_SIZE)
+res = clientSocket.recv(1024)
+print(res.decode())
 
 
 def create_header(
@@ -35,30 +35,35 @@ def create_header(
                    checksum.to_bytes(2) + \
                    urgent_pointer.to_bytes(2)
     
-
-
 #will return a tuple - > (seq_number, ack_number, if_ack, syn, window_size)
 
 def retrieve_header(header):
     return \
         int.from_bytes(header[4:8]),\
         int.from_bytes(header[8:12]),\
-        int.from_bytes(header[13:13]),\
-        int.from_bytes(header[14:14]),\
-        int.from_bytes(header[15:16]),\
+        int.from_bytes(header[12:13]),\
+        int.from_bytes(header[13:14]),\
+        int.from_bytes(header[14:16])
 
 
 
-EST_STATE = False
-CUR_SEQ = 0
-CUR_ACK = 0
-WINDOW_SIZE = 36
+BUFFER_SIZE = 200
+HEADER_SIZE = 20
 
-RECV_DATA = b''
+
+file_in = open("___INPUT___.txt","wb")
 
 def main():
+    CONST_WINDOW_SIZE = 1000
+
+    EST_STATE = False
+    CUR_SEQ = 9000
+    CUR_ACK = 0
+    WINDOW_SIZE = CONST_WINDOW_SIZE
+    EXPECTED_SEQ = 0
+
     while True:
-        #send/receive here
+
         if not EST_STATE:
             #connection establishment phase
 
@@ -71,6 +76,10 @@ def main():
 
             header = clientSocket.recv(HEADER_SIZE)
             seq,ack,if_ack,syn,window_size = retrieve_header(header)
+            EXPECTED_SEQ = seq
+            print("EST STATE : ",
+            "SEQ:",seq,"ACK_NO:",ack,"ACK:",
+            if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
             
             clientSocket.send(create_header(
                 seq=CUR_SEQ + BUFFER_SIZE,
@@ -83,20 +92,58 @@ def main():
             EST_STATE = True
         else: 
             #data transfer phase
-            
-            seq,ack,if_ack,syn,window_size = retrieve_header(clientSocket.recv(20))
-            data  = clientSocket.recv(BUFFER_SIZE)
+            # print("CUR DATA:",CUR_SEQ,CUR_ACK,WINDOW_SIZE)
 
-            print(data)
-            if seq == CUR_SEQ:
-                RECV_DATA += data
+            seq,ack,if_ack,syn,window_size = retrieve_header(clientSocket.recv(HEADER_SIZE))
+            
+            data  = clientSocket.recv(BUFFER_SIZE)
+            file_in.write(data)
+            # print("FROM SENDER\n___________________________\n")
+            # print("SEQ:",seq)
+            # print("DATA : ",data.decode())
+
+
+            
+            if WINDOW_SIZE < BUFFER_SIZE:
+                
+                # print("\n+++++++++++++++++++++\n",
+                # "DATA RECEIVED SO FAR : ",
+                # "\n_______________________________________\n",
+                # RECV_DATA,
+                # "\n_______________________________________\n"
+                # )
+
+                print("FROM SENDER\n___________________________\n")
+                print("SEQ:",seq)
+                print("DATA : ",data.decode())
+
+                clientSocket.send(create_header(
+                    seq=CUR_SEQ,
+                    ack=CUR_ACK,
+                    if_ack=1,
+                    syn = 0,
+                    window_size=WINDOW_SIZE
+                ))
+                WINDOW_SIZE = CONST_WINDOW_SIZE - BUFFER_SIZE
+            
+            elif seq == EXPECTED_SEQ:
                 CUR_SEQ = ack
                 CUR_ACK = seq + BUFFER_SIZE
                 WINDOW_SIZE -= BUFFER_SIZE 
-            else:
+                EXPECTED_SEQ += BUFFER_SIZE
+
                 clientSocket.send(create_header(
-                    seq=CUR_SEQ + BUFFER_SIZE,
-                    ack=CUR_ACK,
+                    seq=ack,
+                    ack=seq + BUFFER_SIZE,
+                    if_ack=1,
+                    syn = 0,
+                    window_size=WINDOW_SIZE
+                ))
+            else:
+                print("OUT_OF_SEQUENCE")
+                clientSocket.send(create_header(
+                    seq=ack,
+                    ack=seq + BUFFER_SIZE,
                     if_ack=1,
                     syn = 0,
                     window_size=WINDOW_SIZE

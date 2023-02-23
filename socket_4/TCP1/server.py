@@ -6,8 +6,6 @@ from _thread import *
 
 HOST = '127.0.0.1'
 PORT = 869
-BUFFER_SIZE = 4
-HEADER_SIZE = 20
 ServerSideSocket = socket.socket()
 
 
@@ -21,7 +19,7 @@ except socket.error as e:
 
 
 print('Socket is listening..')
-ServerSideSocket.listen(6)
+ServerSideSocket.listen(5)
 #____________________________
 
 
@@ -47,18 +45,14 @@ def create_header(
                    window_size.to_bytes(2) + \
                    checksum.to_bytes(2) + \
                    urgent_pointer.to_bytes(2)
-    
-
-
 #will return a tuple - > (seq_number, ack_number, if_ack, syn, window_size)
-
 def retrieve_header(header):
     return \
         int.from_bytes(header[4:8]),\
         int.from_bytes(header[8:12]),\
-        int.from_bytes(header[13:13]),\
-        int.from_bytes(header[14:14]),\
-        int.from_bytes(header[15:16]),\
+        int.from_bytes(header[12:13]),\
+        int.from_bytes(header[13:14]),\
+        int.from_bytes(header[14:16])
 
 
 
@@ -69,22 +63,33 @@ both victim and villain by the vicissitudes of Fate. This visage, \
 no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
 
 
-EST_STATE = False
-CUR_SEQ = 9000
-CUR_ACK = 0
-RECV_WINDOW_SIZE = 0
+BUFFER_SIZE = 200
+HEADER_SIZE = 20
+
+file_data = open("sample.txt","rb")
 
 
 def server_thread(connection):
+    
+    EST_STATE = False
+    CUR_SEQ = 0
+    CUR_ACK = 0
+    RECV_WINDOW_SIZE = 0
+    FILE_END_POINTER = 0
     connection.send('Server Is Connected'.encode())
     while True:
         #send/receive here
+        # print("CUR DATA:",CUR_SEQ,CUR_ACK,RECV_WINDOW_SIZE)
         if not EST_STATE:
             #connection establishment phase
 
             header = connection.recv(HEADER_SIZE)
             seq,ack,if_ack,syn,window_size = retrieve_header(header)
-            
+
+            print("EST STATE : ",
+            "SEQ:",seq,"ACK_NO:",ack,"ACK:",
+            if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
+
             if syn == 0:
                 CUR_SEQ = ack
                 CUR_ACK = seq
@@ -101,21 +106,23 @@ def server_thread(connection):
             
         else:
             #data tranfer phase
-            
-            connection.sendall(create_header(
-                seq=CUR_SEQ + BUFFER_SIZE,
-                ack=CUR_ACK,
-                if_ack=0
-             ) + file_data[CUR_SEQ : (CUR_SEQ + BUFFER_SIZE)])
+            send_data = file_data.read(BUFFER_SIZE)
 
+            connection.sendall(create_header(
+                seq= CUR_SEQ ,
+                ack=CUR_ACK + BUFFER_SIZE,
+                if_ack=0
+             ) + send_data)
+            
             seq,ack,if_ack,syn,window_size = retrieve_header(connection.recv(20))
 
+            # print("FROM RECEIVER\n___________________________\n")
+            # print("SEQ:",seq,"ACK_NO:",ack,"ACK:",
+            # if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
+            
             CUR_SEQ = ack 
             CUR_ACK = seq + BUFFER_SIZE
-
-
-
-
+            RECV_WINDOW_SIZE = window_size
 
     connection.close()
 

@@ -1,11 +1,12 @@
 import random as rnd
 import socket
+import time
+
 clientSocket = socket.socket()
 
 HOST = '127.0.0.1'
 PORT = 869
-BUFFER_SIZE = 4
-HEADER_SIZE = 20
+
 print('Waiting for connection response')
 try:
     clientSocket.connect((HOST, PORT))
@@ -47,22 +48,31 @@ def retrieve_header(header):
         int.from_bytes(header[13:14]),\
         int.from_bytes(header[14:16])
 
-def main():
-    CONST_WINDOW_SIZE = 36
 
+BUFFER_SIZE = 200
+HEADER_SIZE = 20
+
+
+
+def main():
+    len_file = 6090 #this is to terminate after file tranfer
+    file_end = 0    # ideally it would be done through the 
+                    # FIN flag in the header
+    CONST_WINDOW_SIZE = 1000
     EST_STATE = False
+
     CUR_SEQ = 9000
-    CUR_ACK = 0
-    WINDOW_SIZE = 36
+
+    WINDOW_SIZE = CONST_WINDOW_SIZE
+
     EXPECTED_SEQ = 0
+    TIMEOUT = 500 #ms
     RECV_DATA = b''
 
-    itr = 0
+    file_in = open("__INPUT.txt","wb")
 
+    # clientSocket.settimeout(1)
     while True:
-        # if itr > 20:
-        #     break
-        # itr += 1
         #send/receive here
         if not EST_STATE:
             #connection establishment phase
@@ -83,7 +93,7 @@ def main():
             
             clientSocket.send(create_header(
                 seq=CUR_SEQ + BUFFER_SIZE,
-                ack=CUR_ACK,
+                ack=0,
                 if_ack=1,
                 syn = 0,
                 window_size=WINDOW_SIZE
@@ -93,57 +103,54 @@ def main():
         else: 
             #data transfer phase
             # print("CUR DATA:",CUR_SEQ,CUR_ACK,WINDOW_SIZE)
+            clientSocket.send(create_header(
+                seq=EXPECTED_SEQ,
+                ack=EXPECTED_SEQ + BUFFER_SIZE,
+                window_size=WINDOW_SIZE
+            ))
+            st_time = int(time.perf_counter() * 1000)
+            seq,ack,data = 0,0,b''
+    
+            while (int((time.perf_counter() - st_time)*1000) - st_time) < TIMEOUT:
+                try:
+                    seq,ack,if_ack,syn,window_size = \
+                    retrieve_header(clientSocket.recv(HEADER_SIZE))
+                    data=clientSocket.recv(BUFFER_SIZE)
+                    # RECV_DATA += data
+                    file_in.write(data)
+                    file_end += BUFFER_SIZE
+                    # print(data)
+                    WINDOW_SIZE -= BUFFER_SIZE
+                    EXPECTED_SEQ += BUFFER_SIZE
 
-            seq,ack,if_ack,syn,window_size = retrieve_header(clientSocket.recv(HEADER_SIZE))
-            
-            data  = clientSocket.recv(BUFFER_SIZE)
-            
-            print("FROM SENDER\n___________________________\n")
-            print("SEQ:",seq)
-            print("DATA : ",data.decode())
+                    if WINDOW_SIZE < BUFFER_SIZE:
+                        break
+                except Exception as e:
+                    e = str(e)
+                    print(e)
 
-
-            
+            #randomly emptying the buuffer buffer -> application
             if WINDOW_SIZE < BUFFER_SIZE:
-                
-                print("\n+++++++++++++++++++++\n",
-                "DATA RECEIVED SO FAR : ",
-                "\n_______________________________________\n",
-                RECV_DATA,
-                "\n_______________________________________\n"
-                )
+                WINDOW_SIZE += rnd.randint(1,36) * BUFFER_SIZE
+                WINDOW_SIZE = min(WINDOW_SIZE,CONST_WINDOW_SIZE)
 
-                clientSocket.send(create_header(
-                    seq=CUR_SEQ,
-                    ack=CUR_ACK,
-                    if_ack=1,
-                    syn = 0,
-                    window_size=WINDOW_SIZE
-                ))
-                WINDOW_SIZE = CONST_WINDOW_SIZE - BUFFER_SIZE
+
+            #cummilitive acknowledgement
+            clientSocket.send(create_header(
+                seq=ack,
+                ack=EXPECTED_SEQ + BUFFER_SIZE,
+                window_size=WINDOW_SIZE
+            ))
+
+            if file_end >= len_file:
+                clientSocket.close()
+                file_in.close()
+                # print(RECV_DATA)
+
+                break
+    print("DATA RECIEVED")
             
-            elif seq == EXPECTED_SEQ:
-                RECV_DATA += data
-                CUR_SEQ = ack
-                CUR_ACK = seq + BUFFER_SIZE
-                WINDOW_SIZE -= BUFFER_SIZE 
-                EXPECTED_SEQ += BUFFER_SIZE
-
-                clientSocket.send(create_header(
-                    seq=ack,
-                    ack=seq + BUFFER_SIZE,
-                    if_ack=1,
-                    syn = 0,
-                    window_size=WINDOW_SIZE
-                ))
-            else:
-                clientSocket.send(create_header(
-                    seq=ack,
-                    ack=seq + BUFFER_SIZE,
-                    if_ack=1,
-                    syn = 0,
-                    window_size=WINDOW_SIZE
-                ))
+            
 
 if __name__ == "__main__":
     main()

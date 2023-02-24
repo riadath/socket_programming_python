@@ -29,4 +29,9 @@ while True:
     s.send(text.encode())
 
     #I receive data
-    print("Capitalized String : ",s.recv(1024).decode())
+    s.settimeout(0.5)
+    try:
+        print("Capitalized String : ",s.recv(1024).decode())
+    except Exception as e:
+        e = str(e)
+    print("No String Received")

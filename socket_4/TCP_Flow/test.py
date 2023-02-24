@@ -1,9 +1,3 @@
-import random as rnd
-import socket
-import time
-import sys
-
-#
 def create_header(
                 src_port = 88,  #2 bytes
                 dest_port = 88, #2 bytes
@@ -26,9 +20,26 @@ def create_header(
                    urgent_pointer.to_bytes(2)
     
 
-def main():
-    msg = create_header(seq=1, if_ack=1, checksum=1)
-    print(msg)
 
-if __name__ ==  "__main__":
-    main()
+#will return a tuple - > (seq_number, ack_number, if_ack, syn, window_size)
+
+def retrieve_header(header):
+    return \
+        int.from_bytes(header[4:8]),\
+        int.from_bytes(header[8:12]),\
+        int.from_bytes(header[12:13]),\
+        int.from_bytes(header[13:14]),\
+        int.from_bytes(header[14:16])
+
+
+a = create_header(
+    seq=400,
+    ack=600,
+    if_ack=1,
+    syn=1,
+    window_size=20
+)
+
+file_data = open("sample.txt","rb")
+
+print()

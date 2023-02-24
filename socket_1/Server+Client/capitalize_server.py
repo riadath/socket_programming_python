@@ -21,5 +21,5 @@ while True:
     text = text.upper();
     
     #sending back the string with all letters capitalized
-    c.send(text.encode())
+    # c.send(text.encode())
     #_______________________

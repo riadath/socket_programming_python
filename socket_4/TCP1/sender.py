@@ -6,8 +6,7 @@ from _thread import *
 
 HOST = '127.0.0.1'
 PORT = 869
-BUFFER_SIZE = 4
-HEADER_SIZE = 20
+
 ServerSideSocket = socket.socket()
 
 
@@ -63,16 +62,20 @@ file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
 both victim and villain by the vicissitudes of Fate. This visage, \
 no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
 
+file_data = open("sample.txt","rb")
+
+# print(len(file_data))
 
 
+BUFFER_SIZE = 200
+HEADER_SIZE = 20
 
 def server_thread(connection):
     
     EST_STATE = False
     CUR_SEQ = 0
-    CUR_ACK = 0
-    RECV_WINDOW_SIZE = 0
-    FILE_END_POINTER = 0
+    FILE_END = 0
+
     connection.send('Server Is Connected'.encode())
     while True:
         #send/receive here
@@ -102,30 +105,35 @@ def server_thread(connection):
 
             
         else:
-            #data tranfer phase
-            
-            connection.sendall(create_header(
-                seq= CUR_SEQ ,
-                ack=CUR_ACK + BUFFER_SIZE,
-                if_ack=0
-             ) + file_data[CUR_SEQ : (CUR_SEQ + BUFFER_SIZE)])
-            
-            seq,ack,if_ack,syn,window_size = retrieve_header(connection.recv(20))
 
-            print("FROM RECEIVER\n___________________________\n")
-            print("SEQ:",seq,"ACK_NO:",ack,"ACK:",
-            if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
-            
-            CUR_SEQ = ack 
-            CUR_ACK = seq + BUFFER_SIZE
-            RECV_WINDOW_SIZE = window_size
-            
-            FILE_END_POINTER += 1
-            if FILE_END_POINTER > len(file_data):
+            #data tranfer phase
+            seq,ack,if_ack,syn,window_size = retrieve_header(connection.recv(HEADER_SIZE))
+            print(seq,ack,if_ack,window_size,"<<<<<<<")
+
+            CUR_SEQ = ack
+
+            while window_size >= BUFFER_SIZE:
+                try:
+                    # to_send = file_data[CUR_SEQ : (CUR_SEQ+BUFFER_SIZE)]
+                    to_send = file_data.read(BUFFER_SIZE)
+                    connection.send(
+                        create_header(
+                            seq=CUR_SEQ,
+                            ack=seq + BUFFER_SIZE,
+                        ) + to_send
+                    )
+                    FILE_END += BUFFER_SIZE
+                    window_size -= BUFFER_SIZE
+                    CUR_SEQ += BUFFER_SIZE
+                except Exception as e:
+                    FILE_END = True
+                    break
+
+            if FILE_END == True:
                 break
 
-    connection.close()
-
+    # connection.close()
+    print("DATA SENT")
 
 #threading for multi client
 #____________________________

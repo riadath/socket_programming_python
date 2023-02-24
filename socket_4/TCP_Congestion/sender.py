@@ -6,8 +6,7 @@ from _thread import *
 
 HOST = '127.0.0.1'
 PORT = 869
-BUFFER_SIZE = 4
-HEADER_SIZE = 20
+
 ServerSideSocket = socket.socket()
 
 
@@ -34,7 +33,7 @@ def create_header(
                 ack = 0,   #4 bytes
                 if_ack = 0, #ack = 1 -> if acknowledgement, 0 otherwise
                 syn = 0, #syn = 1-> if synch req
-                window_size = 0, #2 bytes
+                rwnd = 0, #2 bytes
                 checksum = 0, #2 bytes
                 urgent_pointer = 0, #2 bytes
                 ):
@@ -44,10 +43,10 @@ def create_header(
                    ack.to_bytes(4) + \
                    if_ack.to_bytes(1) + \
                    syn.to_bytes(1) + \
-                   window_size.to_bytes(2) + \
+                   rwnd.to_bytes(2) + \
                    checksum.to_bytes(2) + \
                    urgent_pointer.to_bytes(2)
-#will return a tuple - > (seq_number, ack_number, if_ack, syn, window_size)
+#will return a tuple - > (seq_number, ack_number, if_ack, syn, rwnd)
 def retrieve_header(header):
     return \
         int.from_bytes(header[4:8]),\
@@ -63,68 +62,81 @@ file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
 both victim and villain by the vicissitudes of Fate. This visage, \
 no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
 
+# file_data = open("sample.txt","rb")
 
+# print(len(file_data))
 
+FILE_END = len(file_data)
+MSS = 4
+HEADER_SIZE = 20
+
+print("FILE END : ",FILE_END)
 
 def server_thread(connection):
-    
-    EST_STATE = False
-    CUR_SEQ = 0
-    CUR_ACK = 0
-    RECV_WINDOW_SIZE = 0
-    FILE_END_POINTER = 0
     connection.send('Server Is Connected'.encode())
+    connection.settimeout(2)
+    #start
+    EST_STATE = False
+    file_pointer = 0
+    cur_seq = 0
+    
     while True:
         #send/receive here
-        # print("CUR DATA:",CUR_SEQ,CUR_ACK,RECV_WINDOW_SIZE)
         if not EST_STATE:
             #connection establishment phase
 
             header = connection.recv(HEADER_SIZE)
-            seq,ack,if_ack,syn,window_size = retrieve_header(header)
+            seq,ack,if_ack,syn,rwnd = retrieve_header(header)
 
             print("EST STATE : ",
             "SEQ:",seq,"ACK_NO:",ack,"ACK:",
-            if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
+            if_ack,"SYN:",syn,"WINDOW SIZE:",rwnd)
 
             if syn == 0:
-                CUR_SEQ = ack
-                CUR_ACK = seq
-                RECV_WINDOW_SIZE = window_size
+                cur_seq = ack
                 EST_STATE = True
             else:
                 connection.send(create_header(
-                    seq = CUR_SEQ,
-                    ack = seq + 1,
+                    seq = cur_seq,
+                    ack = seq + MSS,
                     if_ack = 1,
                     syn = 1
                 ))
-
-            
         else:
             #data tranfer phase
             
-            connection.sendall(create_header(
-                seq= CUR_SEQ ,
-                ack=CUR_ACK + BUFFER_SIZE,
-                if_ack=0
-             ) + file_data[CUR_SEQ : (CUR_SEQ + BUFFER_SIZE)])
             
-            seq,ack,if_ack,syn,window_size = retrieve_header(connection.recv(20))
 
-            print("FROM RECEIVER\n___________________________\n")
-            print("SEQ:",seq,"ACK_NO:",ack,"ACK:",
-            if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
+            while rwnd >= MSS:
+                try:
+                    to_send = file_data[cur_seq : (cur_seq+MSS)]
+                    # to_send = file_data.read(MSS)
+                    connection.send(
+                        create_header(
+                            seq=cur_seq,
+                        ) + to_send
+                    )
+                    file_pointer += MSS
+                    rwnd -= MSS
+                    cur_seq += MSS
+                    
+                except Exception as e:
+                    break
             
-            CUR_SEQ = ack 
-            CUR_ACK = seq + BUFFER_SIZE
-            RECV_WINDOW_SIZE = window_size
             
-            FILE_END_POINTER += 1
-            if FILE_END_POINTER > len(file_data):
+            if cur_seq >= FILE_END:
                 break
+            
 
-    connection.close()
+            seq,ack,if_ack,syn,rwnd = retrieve_header(connection.recv(HEADER_SIZE))
+            cur_seq = ack
+            print("ack:" ,ack,"rwnd:",rwnd)
+
+            
+
+    # connection.close()
+    print("DATA SENT")
+
 
 
 #threading for multi client

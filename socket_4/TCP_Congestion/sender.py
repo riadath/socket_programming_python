@@ -62,19 +62,19 @@ def time_ms():
 file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
 both victim and villain by the vicissitudes of Fate. This visage'
 
-# file_data = open("sample.txt","rb")
+file_data = open("sample.txt","rb")
 
 # print(len(file_data))
 
-FILE_END = len(file_data)
-MSS = 4
+FILE_END = 6190
+MSS = 200
 HEADER_SIZE = 20
 
 
 
 print("FILE END : ",FILE_END)
 
-def server_thread(connection):
+def start_server(connection):
     connection.send('Server Is Connected'.encode())
     # connection.settimeout(1)
 
@@ -87,7 +87,7 @@ def server_thread(connection):
 
 
     conn_state = STATE.EST_STATE
-    file_pointer = 0
+    
     cur_seq = 0
     cur_ack = 0
     prev_ack = 0
@@ -95,7 +95,7 @@ def server_thread(connection):
 
     #for congestion control
     cwnd = MSS    
-    timeout = 50 #ms
+    timeout = 20 #ms
     ssthresh = 0
     dupACKcount = 0
     rwnd = 0
@@ -130,9 +130,11 @@ def server_thread(connection):
             #data tranfer phase
             available_window = min(cwnd,rwnd)
             while available_window >= MSS:
+                # to_send = file_data[cur_seq:(cur_seq+MSS)]
+                to_send = file_data.read(MSS)
                 connection.sendall(create_header(
                     seq=cur_seq,
-                ) + file_data[cur_seq:(cur_seq+MSS)])
+                ) + to_send)
                 
                 available_window -= MSS
                 cur_seq += MSS
@@ -142,31 +144,9 @@ def server_thread(connection):
             seq,ack,if_ack,syn,rwnd = retrieve_header(connection.recv(HEADER_SIZE))
             
             #duplicate ack
-            print("ACK:",ack,"rwnd:",rwnd)
-            print("============\n",conn_state.name,"\n============")
-
-            # if ack == prev_ack:
-            #     dupACKcount += 1
-            # else:
-            #     dupACKcount = 0
-            # if ack == cur_ack:
-            #     cwnd += MSS
-            #     if cwnd >= ssthresh:
-            #         cwnd += MSS * MSS // cwnd
-            # if dupACKcount >= 3:
-            #     print("---------------------------------------->",
-            #     "3 DUPLICATE ACKS FOUND")
-            #     dupACKcount = 0
-            #     ssthresh = cwnd // 2
-            #     cwnd = MSS
-            #     cur_seq = prev_ack
             
-            # if (time_ms() - st_time) > timeout:
-            #     print("TIMEOUT !!! ")
-            #     ssthresh = cwnd // 2
-            #     cwnd = MSS
-            #     cur_ack = ack
-            #     st_time = time_ms()
+            print("\n\n",conn_state.name,
+                  "\n________________________")
 
 
             if conn_state == STATE.SLOW_START:
@@ -181,9 +161,8 @@ def server_thread(connection):
                     print("3 Duplicate ACK found !!!!!!")
                     ssthresh = cwnd//2
                     dupACKcount = 0
-                    cwnd = ssthresh + 3*MSS
+                    cwnd = MSS
                     cur_seq = prev_ack
-                    conn_state = STATE.FAST_RECOVERY
 
                 #duplicate ack
                 if ack == prev_ack:
@@ -192,13 +171,13 @@ def server_thread(connection):
                     dupACKcount = 0
                 
                 #timeout
-                prev_ack = ack
                 if (time_ms() - st_time) > timeout:
                     print("Timeout!!!!")
                     ssthresh = cwnd // 2
                     cwnd = MSS
-                    dupACKcount = 0
                     st_time = time_ms()
+                    dupACKcount = 0
+                    cur_seq = ack
 
             elif conn_state == STATE.CONGESTION_AVOIDANCE:
                 #new ack
@@ -209,53 +188,30 @@ def server_thread(connection):
                     print("3 Duplicate ACK found !!!!!!")
                     ssthresh = cwnd//2
                     dupACKcount = 0
-                    cwnd = ssthresh + 3*MSS
+                    cwnd = MSS
                     cur_seq = prev_ack
-                    conn_state = STATE.FAST_RECOVERY
                 #duplicate ack
                 if ack == prev_ack:
                     dupACKcount += 1
                 else:
                     dupACKcount = 0
                 #timeout
-                prev_ack = ack
                 if (time_ms() - st_time) > timeout:
                     print("Timeout!!!!")
                     ssthresh = cwnd // 2
                     cwnd = MSS
                     dupACKcount = 0
                     st_time = time_ms()
+                    cur_seq = ack
                     conn_state = STATE.SLOW_START
 
-            elif conn_state == STATE.FAST_RECOVERY:
-
-                #new ack
-                if cur_ack == ack:
-                    dupACKcount = 0
-                    cwnd = ssthresh
-                    conn_state = STATE.CONGESTION_AVOIDANCE
-                
-                #duplicate ack
-                if ack == prev_ack:
-                    cur_seq = prev_ack
-                    cwnd += MSS   
-                #timeout
-                prev_ack = ack
-                if (time_ms() - st_time) > timeout:
-                    print("Timeout!!!!")
-                    ssthresh = cwnd // 2
-                    cwnd = MSS
-                    dupACKcount = 0
-                    st_time = time_ms()
-                    conn_state = STATE.SLOW_START
-            
-            # prev_ack = ack
+            prev_ack = ack
+            print("ACK:",ack,"rwnd:",rwnd)
             print("------------------>cwnd:",cwnd,"ssthresh:",ssthresh)
+
+
             if cur_seq >= FILE_END:
                 break
-
-
-    # connection.close()
     print("DATA SENT")
 
 
@@ -263,17 +219,12 @@ def server_thread(connection):
 #threading for multi client
 #____________________________
 def main():
-    ThreadCount = 0 
-    while True:
-        Client, address = ServerSideSocket.accept()
-        print('Connected to: ' + address[0] + ':' + str(address[1]))
-        
-        try:
-            start_new_thread(server_thread, (Client, ))
-        except Exception as e:
-            continue
-        ThreadCount += 1
-        print('Thread Number: ' + str(ThreadCount))
+    Client, address = ServerSideSocket.accept()
+    print('Connected to: ' + address[0] + ':' + str(address[1]))
+    try:
+        start_server(Client)
+    except:
+        print("Connection Closed")
     ServerSideSocket.close()
 
 if __name__ == "__main__":

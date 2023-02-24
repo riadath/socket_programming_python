@@ -42,12 +42,5 @@ a = create_header(
     window_size=20
 )
 
-class STATE(Enum):
-    EST_STATE = 0
-    SLOW_START = 1
-    CONGESTION_AVOIDANCE = 2
-    FAST_RECOVERY = 3
-
-conn = STATE.EST_STATE
-
-print(conn)
+data = bytearray(b'dfsdf')
+print(not data)

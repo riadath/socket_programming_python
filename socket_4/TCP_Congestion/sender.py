@@ -1,7 +1,7 @@
 import socket
-import os
+import time
 from _thread import *
-
+from enum import Enum
 
 
 HOST = '127.0.0.1'
@@ -55,46 +55,70 @@ def retrieve_header(header):
         int.from_bytes(header[13:14]),\
         int.from_bytes(header[14:16])
 
-
+def time_ms():
+    return int(time.perf_counter() * 1000)
 
 #test file data
-# file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
-# both victim and villain by the vicissitudes of Fate. This visage, \
-# no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
+file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visage'
 
-file_data = open("sample.txt","rb")
+# file_data = open("sample.txt","rb")
 
 # print(len(file_data))
 
-FILE_END = 6190
-MSS = 200
+FILE_END = len(file_data)
+MSS = 4
 HEADER_SIZE = 20
+
+
 
 print("FILE END : ",FILE_END)
 
 def server_thread(connection):
     connection.send('Server Is Connected'.encode())
-    connection.settimeout(2)
+    # connection.settimeout(1)
+
     #start
-    EST_STATE = False
+    class STATE(Enum):
+        EST_STATE = 0
+        SLOW_START = 1
+        CONGESTION_AVOIDANCE = 2
+        FAST_RECOVERY = 3
+
+
+    conn_state = STATE.EST_STATE
     file_pointer = 0
     cur_seq = 0
+    cur_ack = 0
+    prev_ack = 0
+    st_time = time_ms()
+
+    #for congestion control
+    cwnd = MSS    
+    timeout = 50 #ms
+    ssthresh = 0
+    dupACKcount = 0
+    rwnd = 0
+    available_window = MSS;
     
     while True:
         #send/receive here
-        if not EST_STATE:
+        if conn_state == STATE.EST_STATE:
             #connection establishment phase
 
             header = connection.recv(HEADER_SIZE)
             seq,ack,if_ack,syn,rwnd = retrieve_header(header)
+            ssthresh = rwnd
 
+            #DEBUG______
             print("EST STATE : ",
             "SEQ:",seq,"ACK_NO:",ack,"ACK:",
             if_ack,"SYN:",syn,"WINDOW SIZE:",rwnd)
+            #DEBUG______
 
             if syn == 0:
                 cur_seq = ack
-                EST_STATE = True
+                conn_state = STATE.SLOW_START
             else:
                 connection.send(create_header(
                     seq = cur_seq,
@@ -104,32 +128,132 @@ def server_thread(connection):
                 ))
         else:
             #data tranfer phase
-            while rwnd >= MSS:
-                try:
-                    # to_send = file_data[cur_seq : (cur_seq+MSS)]
-                    to_send = file_data.read(MSS)
-                    connection.send(
-                        create_header(
-                            seq=cur_seq,
-                        ) + to_send
-                    )
-                    file_pointer += MSS
-                    rwnd -= MSS
-                    cur_seq += MSS
-                    
-                except Exception as e:
-                    break
-            
+            available_window = min(cwnd,rwnd)
+            while available_window >= MSS:
+                connection.sendall(create_header(
+                    seq=cur_seq,
+                ) + file_data[cur_seq:(cur_seq+MSS)])
+                
+                available_window -= MSS
+                cur_seq += MSS
+                st_time = time_ms()
 
+            cur_ack = cur_seq
+            seq,ack,if_ack,syn,rwnd = retrieve_header(connection.recv(HEADER_SIZE))
+            
+            #duplicate ack
+            print("ACK:",ack,"rwnd:",rwnd)
+            print("============\n",conn_state.name,"\n============")
+
+            # if ack == prev_ack:
+            #     dupACKcount += 1
+            # else:
+            #     dupACKcount = 0
+            # if ack == cur_ack:
+            #     cwnd += MSS
+            #     if cwnd >= ssthresh:
+            #         cwnd += MSS * MSS // cwnd
+            # if dupACKcount >= 3:
+            #     print("---------------------------------------->",
+            #     "3 DUPLICATE ACKS FOUND")
+            #     dupACKcount = 0
+            #     ssthresh = cwnd // 2
+            #     cwnd = MSS
+            #     cur_seq = prev_ack
+            
+            # if (time_ms() - st_time) > timeout:
+            #     print("TIMEOUT !!! ")
+            #     ssthresh = cwnd // 2
+            #     cwnd = MSS
+            #     cur_ack = ack
+            #     st_time = time_ms()
+
+
+            if conn_state == STATE.SLOW_START:
+                #new ack
+                if cur_ack == ack:
+                    dupACKcount = 0
+                    cwnd += MSS
+                    if cwnd >= ssthresh:
+                        conn_state = STATE.CONGESTION_AVOIDANCE
+                        continue
+                if dupACKcount == 3:
+                    print("3 Duplicate ACK found !!!!!!")
+                    ssthresh = cwnd//2
+                    dupACKcount = 0
+                    cwnd = ssthresh + 3*MSS
+                    cur_seq = prev_ack
+                    conn_state = STATE.FAST_RECOVERY
+
+                #duplicate ack
+                if ack == prev_ack:
+                    dupACKcount += 1
+                else:
+                    dupACKcount = 0
+                
+                #timeout
+                prev_ack = ack
+                if (time_ms() - st_time) > timeout:
+                    print("Timeout!!!!")
+                    ssthresh = cwnd // 2
+                    cwnd = MSS
+                    dupACKcount = 0
+                    st_time = time_ms()
+
+            elif conn_state == STATE.CONGESTION_AVOIDANCE:
+                #new ack
+                if cur_ack == ack:
+                    dupACKcount = 0
+                    cwnd += int(MSS * (MSS/cwnd))
+                if dupACKcount == 3:
+                    print("3 Duplicate ACK found !!!!!!")
+                    ssthresh = cwnd//2
+                    dupACKcount = 0
+                    cwnd = ssthresh + 3*MSS
+                    cur_seq = prev_ack
+                    conn_state = STATE.FAST_RECOVERY
+                #duplicate ack
+                if ack == prev_ack:
+                    dupACKcount += 1
+                else:
+                    dupACKcount = 0
+                #timeout
+                prev_ack = ack
+                if (time_ms() - st_time) > timeout:
+                    print("Timeout!!!!")
+                    ssthresh = cwnd // 2
+                    cwnd = MSS
+                    dupACKcount = 0
+                    st_time = time_ms()
+                    conn_state = STATE.SLOW_START
+
+            elif conn_state == STATE.FAST_RECOVERY:
+
+                #new ack
+                if cur_ack == ack:
+                    dupACKcount = 0
+                    cwnd = ssthresh
+                    conn_state = STATE.CONGESTION_AVOIDANCE
+                
+                #duplicate ack
+                if ack == prev_ack:
+                    cur_seq = prev_ack
+                    cwnd += MSS   
+                #timeout
+                prev_ack = ack
+                if (time_ms() - st_time) > timeout:
+                    print("Timeout!!!!")
+                    ssthresh = cwnd // 2
+                    cwnd = MSS
+                    dupACKcount = 0
+                    st_time = time_ms()
+                    conn_state = STATE.SLOW_START
+            
+            # prev_ack = ack
+            print("------------------>cwnd:",cwnd,"ssthresh:",ssthresh)
             if cur_seq >= FILE_END:
                 break
-            
 
-            seq,ack,if_ack,syn,rwnd = retrieve_header(connection.recv(HEADER_SIZE))
-            cur_seq = ack
-            print("ack:" ,ack,"rwnd:",rwnd)
-
-            
 
     # connection.close()
     print("DATA SENT")

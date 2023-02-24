@@ -58,25 +58,28 @@ def retrieve_header(header):
 
 
 #test file data
-file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
-both victim and villain by the vicissitudes of Fate. This visage, \
-no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
+# file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
+# both victim and villain by the vicissitudes of Fate. This visage, \
+# no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
 
 file_data = open("sample.txt","rb")
 
 # print(len(file_data))
 
-
-BUFFER_SIZE = 200
+FILE_END = 6190
+MSS = 200
 HEADER_SIZE = 20
 
-def server_thread(connection):
-    
-    EST_STATE = False
-    FILE_END = 0
-    cur_seq = 0
-    connection.send('Server Is Connected'.encode())
+print("FILE END : ",FILE_END)
 
+def server_thread(connection):
+    connection.send('Server Is Connected'.encode())
+    connection.settimeout(2)
+    #start
+    EST_STATE = False
+    file_pointer = 0
+    cur_seq = 0
+    
     while True:
         #send/receive here
         if not EST_STATE:
@@ -95,36 +98,38 @@ def server_thread(connection):
             else:
                 connection.send(create_header(
                     seq = cur_seq,
-                    ack = seq + BUFFER_SIZE,
+                    ack = seq + MSS,
                     if_ack = 1,
                     syn = 1
                 ))
         else:
-
             #data tranfer phase
-            seq,ack,if_ack,syn,rwnd = retrieve_header(connection.recv(HEADER_SIZE))
-            cur_seq = ack
-            print("ack:" ,ack,"rwnd:",rwnd)
-
-            while rwnd >= BUFFER_SIZE:
+            while rwnd >= MSS:
                 try:
-                    # to_send = file_data[cur_seq : (cur_seq+BUFFER_SIZE)]
-                    to_send = file_data.read(BUFFER_SIZE)
+                    # to_send = file_data[cur_seq : (cur_seq+MSS)]
+                    to_send = file_data.read(MSS)
                     connection.send(
                         create_header(
                             seq=cur_seq,
                         ) + to_send
                     )
-
-                    rwnd -= BUFFER_SIZE
-                    cur_seq += BUFFER_SIZE
+                    file_pointer += MSS
+                    rwnd -= MSS
+                    cur_seq += MSS
                     
                 except Exception as e:
-                    FILE_END = True
                     break
+            
 
-            if FILE_END == True:
+            if cur_seq >= FILE_END:
                 break
+            
+
+            seq,ack,if_ack,syn,rwnd = retrieve_header(connection.recv(HEADER_SIZE))
+            cur_seq = ack
+            print("ack:" ,ack,"rwnd:",rwnd)
+
+            
 
     # connection.close()
     print("DATA SENT")

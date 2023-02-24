@@ -52,18 +52,18 @@ def retrieve_header(header):
 def time_ms():
     return int(time.perf_counter() * 1000)
 
-MSS = 4
+MSS = 200
 HEADER_SIZE = 20
 
 
 
 def main():
     file_in = open("__INPUT.txt","wb")
-    len_file = 199 #this is to terminate after file tranfer
+    len_file = 6190 #this is to terminate after file tranfer
     # file_end = 0   # ideally it would be done through the 
                     # FIN flag in the header
 
-    CONST_rwnd = 20
+    CONST_rwnd = 1000
     TIMEOUT = 500 #ms
     EST_STATE = False
     RECV_DATA = b''
@@ -106,12 +106,6 @@ def main():
             EST_STATE = True
         else: 
             #data transfer phase
-        
-            # clientSocket.send(create_header(
-            #     seq=9000,
-            #     ack=expected_seq,
-            #     window_size=rwnd
-            # ))
             seq,ack,data = 0,0,b''
             st_time = time_ms()
             while (time_ms() - st_time) < TIMEOUT:
@@ -120,14 +114,11 @@ def main():
                     seq,ack,if_ack,syn,window_size = \
                     retrieve_header(clientSocket.recv(HEADER_SIZE))
                     data=clientSocket.recv(MSS)
+                    # RECV_DATA += data
+                    file_in.write(data)
+
                     print("seq:",seq)
                     
-                    #write data
-                    # file_in.write(data)
-                    RECV_DATA += data
-
-                    #adjusting control variables
-                    # file_end += MSS
                     rwnd -= MSS
                     expected_seq += MSS
 
@@ -138,6 +129,22 @@ def main():
                 except Exception as e:
                     e = str(e)
                     print(e)
+
+
+            #check if data transfer is over
+            if expected_seq+MSS >= len_file:
+                clientSocket.send(create_header(
+                    seq=0,
+                    ack=expected_seq+MSS,
+                    if_ack=1,
+                    window_size=rwnd
+                ))
+
+                clientSocket.close()
+                file_in.close()
+                # print(RECV_DATA)
+                break
+            
 
             #randomly emptying the buuffer buffer -> application
             if rwnd < MSS:
@@ -151,20 +158,6 @@ def main():
                 ack=expected_seq + MSS,
                 window_size=rwnd
             ))
-
-            if expected_seq >= len_file:
-                # clientSocket.send(create_header(
-                #      seq=0,
-                #      ack=expected_seq+MSS,
-                #      if_ack=1,
-                #      window_size=rwnd
-                # ))
-
-                clientSocket.close()
-                # file_in.close()
-                print(RECV_DATA)
-                break
-    
     print("DATA RECIEVED")
             
             

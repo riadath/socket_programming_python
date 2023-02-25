@@ -59,7 +59,7 @@ HEADER_SIZE = 20
 
 def main():
     file_in = open("__INPUT.txt","wb")
-    len_file = 6190 #this is to terminate after file tranfer
+    len_file = 6090 #this is to terminate after file tranfer
     # file_end = 0   # ideally it would be done through the 
                     # FIN flag in the header
 
@@ -70,10 +70,9 @@ def main():
 
     expected_seq = 0
     rwnd = CONST_rwnd
-   
-    
 
-    # clientSocket.settimeout(1)
+
+    clientSocket.settimeout(1)
     while True:
         #send/receive here
         if not EST_STATE:
@@ -127,19 +126,11 @@ def main():
                         break
                     
                 except Exception as e:
-                    e = str(e)
-                    print(e)
+                    continue
 
 
             #check if data transfer is over
             if expected_seq+MSS >= len_file:
-                clientSocket.send(create_header(
-                    seq=0,
-                    ack=expected_seq+MSS,
-                    if_ack=1,
-                    window_size=rwnd
-                ))
-
                 clientSocket.close()
                 file_in.close()
                 # print(RECV_DATA)
@@ -158,6 +149,7 @@ def main():
                 ack=expected_seq + MSS,
                 window_size=rwnd
             ))
+
     print("DATA RECIEVED")
             
             

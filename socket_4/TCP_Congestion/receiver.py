@@ -166,7 +166,7 @@ def main():
                         window_size=rwnd
                     ))
 
-    clientSocket.close()
+    # clientSocket.close()
 
     file_in.close()
     # print(RECV_DATA)   

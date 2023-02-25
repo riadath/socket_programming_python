@@ -66,7 +66,7 @@ file_data = open("sample.txt","rb")
 
 # print(len(file_data))
 
-FILE_END = 6190
+FILE_END = 6090
 MSS = 200
 HEADER_SIZE = 20
 
@@ -74,7 +74,7 @@ print("FILE END : ",FILE_END)
 
 def server_thread(connection):
     connection.send('Server Is Connected'.encode())
-    connection.settimeout(2)
+    connection.settimeout(1)
     #start
     EST_STATE = False
     file_pointer = 0

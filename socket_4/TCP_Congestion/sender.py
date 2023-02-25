@@ -95,12 +95,22 @@ def start_server(connection):
 
     #for congestion control
     cwnd = MSS    
-    timeout = 20 #ms
+    timeout = 200 #ms
     ssthresh = 0
     dupACKcount = 0
     rwnd = 0
     available_window = MSS;
     
+
+    #ewma 
+    SampleRTT = 500
+    EstimatedRTT = 500
+    DevRTT = 500
+    alpha = .125
+    beta = .125
+    
+    
+
     while True:
         #send/receive here
         if conn_state == STATE.EST_STATE:
@@ -143,8 +153,15 @@ def start_server(connection):
             cur_ack = cur_seq
             seq,ack,if_ack,syn,rwnd = retrieve_header(connection.recv(HEADER_SIZE))
             
-            #duplicate ack
+
+            #ewma equation
+            SampleRTT = time_ms() - st_time
+            EstimatedRTT = alpha * SampleRTT + (1 - alpha) * EstimatedRTT
+            DevRTT = beta * abs(SampleRTT - EstimatedRTT) + (1 - beta) * DevRTT
+            timeout = EstimatedRTT + 4 * DevRTT   
             
+
+            #duplicate ack
             print("\n\n",conn_state.name,
                   "\n________________________")
 
@@ -207,7 +224,8 @@ def start_server(connection):
 
             prev_ack = ack
             print("ACK:",ack,"rwnd:",rwnd)
-            print("------------------>cwnd:",cwnd,"ssthresh:",ssthresh)
+            print("------------------>cwnd:",cwnd,"ssthresh:",ssthresh,
+                  "timeout:",timeout)
 
 
             if cur_seq >= FILE_END:

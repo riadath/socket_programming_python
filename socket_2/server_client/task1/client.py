@@ -1,6 +1,8 @@
 import socket
+import random
+
 ClientMultiSocket = socket.socket()
-host = '172.19.31.121'
+host = '127.0.0.1'
 port = 8080
 print('Waiting for connection response')
 try:
@@ -8,6 +10,7 @@ try:
 except socket.error as e:
     print(str(e))
 res = ClientMultiSocket.recv(4096)
+ClientMultiSocket.settimeout(1)
 while True:
     #send data
     Input = input('File Name: ')
@@ -22,13 +25,16 @@ while True:
         continue
 
     #recieve data
-    file = open("rec"+Input, 'wb')
+    file = open(f"{random.randint(1,10000)}rec"+Input, 'wb')
 
 # Keep receiving data from the server
     line = ClientMultiSocket.recv(1024)
     while(line):
         file.write(line)
-        line = ClientMultiSocket.recv(1024)
+        try:
+            line = ClientMultiSocket.recv(1024)
+        except:
+            break
         if not line or line == b'':
             file.close()
             break

@@ -1,4 +1,5 @@
 import socket
+import random as rnd
 import time
 from _thread import *
 from enum import Enum
@@ -33,7 +34,7 @@ def create_header(
                 ack = 0,   #4 bytes
                 if_ack = 0, #ack = 1 -> if acknowledgement, 0 otherwise
                 syn = 0, #syn = 1-> if synch req
-                rwnd = 0, #2 bytes
+                window_size = 0, #2 bytes
                 checksum = 0, #2 bytes
                 urgent_pointer = 0, #2 bytes
                 ):
@@ -43,7 +44,7 @@ def create_header(
                    ack.to_bytes(4) + \
                    if_ack.to_bytes(1) + \
                    syn.to_bytes(1) + \
-                   rwnd.to_bytes(2) + \
+                   window_size.to_bytes(2) + \
                    checksum.to_bytes(2) + \
                    urgent_pointer.to_bytes(2)
 #will return a tuple - > (seq_number, ack_number, if_ack, syn, rwnd)
@@ -60,14 +61,23 @@ def time_ms():
 
 #test file data
 file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visageIn view, a humble vaudevillian veteran, cast vicariously as \
 both victim and villain by the vicissitudes of Fate. This visage'
 
-file_data = open("sample.txt","rb")
-
+# file_data = open("sample.txt","rb")
+file_graph = open("graph1.txt","w")
 # print(len(file_data))
 
-FILE_END = 6190
-MSS = 200
+FILE_END = 624
+MSS = 150
 HEADER_SIZE = 20
 
 
@@ -95,7 +105,7 @@ def start_server(connection):
 
     #for congestion control
     cwnd = MSS    
-    timeout = 200 #ms
+    timeout = 90 #ms
     ssthresh = 0
     dupACKcount = 0
     rwnd = 0
@@ -109,7 +119,7 @@ def start_server(connection):
     alpha = .125
     beta = .125
     
-    
+    base_time = time_ms()
 
     while True:
         #send/receive here
@@ -118,12 +128,13 @@ def start_server(connection):
 
             header = connection.recv(HEADER_SIZE)
             seq,ack,if_ack,syn,rwnd = retrieve_header(header)
-            ssthresh = rwnd
+
+            ssthresh = 10 * rwnd
 
             #DEBUG______
-            print("EST STATE : ",
-            "SEQ:",seq,"ACK_NO:",ack,"ACK:",
-            if_ack,"SYN:",syn,"WINDOW SIZE:",rwnd)
+            # print("EST STATE : ",
+            # "SEQ:",seq,"ACK_NO:",ack,"ACK:",
+            # if_ack,"SYN:",syn,"WINDOW SIZE:",rwnd)
             #DEBUG______
 
             if syn == 0:
@@ -137,11 +148,14 @@ def start_server(connection):
                     syn = 1
                 ))
         else:
+            file_graph.write(f"({(time_ms() - base_time)//100},{cwnd}) [a]\n")
             #data tranfer phase
-            available_window = min(cwnd,rwnd)
+            available_window = min(cwnd,max(rwnd,MSS))
+                
             while available_window >= MSS:
-                # to_send = file_data[cur_seq:(cur_seq+MSS)]
-                to_send = file_data.read(MSS)
+                to_send = file_data[cur_seq:(cur_seq+MSS)]
+                # file_data.seek(cur_seq)
+                # to_send = file_data.read(MSS)
                 connection.sendall(create_header(
                     seq=cur_seq,
                 ) + to_send)
@@ -162,74 +176,74 @@ def start_server(connection):
             
 
             #duplicate ack
-            print("\n\n",conn_state.name,
-                  "\n________________________")
+            # print("\n\n",conn_state.name,"ack:",ack,
+            #         "\n________________________")
 
-
+        
             if conn_state == STATE.SLOW_START:
-                #new ack
-                if cur_ack == ack:
+                #timeout
+                if ack == prev_ack:
+                    dupACKcount += 1
+                if (time_ms() - st_time) > timeout:
+                    # print("Timeout!!!!")
+                    ssthresh = cwnd // 2
+                    cwnd = MSS
+                    st_time = time_ms()
                     dupACKcount = 0
-                    cwnd += MSS
+                    cur_seq = ack
+                    
+                
+                elif dupACKcount == 3:
+                    # print("3 Duplicate ACK found !!!!!!")
+                    ssthresh = cwnd//2
+                    dupACKcount = 0
+                    cwnd = (cwnd//2) + 3*MSS
+                    cur_seq = prev_ack
+                #new ack
+                elif cur_ack == ack and (ack != prev_ack):
+                    dupACKcount = 0
+                    cwnd *= 2
                     if cwnd >= ssthresh:
+                        cwnd += MSS
                         conn_state = STATE.CONGESTION_AVOIDANCE
                         continue
-                if dupACKcount == 3:
-                    print("3 Duplicate ACK found !!!!!!")
-                    ssthresh = cwnd//2
-                    dupACKcount = 0
-                    cwnd = MSS
-                    cur_seq = prev_ack
-
-                #duplicate ack
-                if ack == prev_ack:
-                    dupACKcount += 1
-                else:
-                    dupACKcount = 0
                 
-                #timeout
-                if (time_ms() - st_time) > timeout:
-                    print("Timeout!!!!")
-                    ssthresh = cwnd // 2
-                    cwnd = MSS
-                    st_time = time_ms()
-                    dupACKcount = 0
-                    cur_seq = ack
-
             elif conn_state == STATE.CONGESTION_AVOIDANCE:
-                #new ack
-                if cur_ack == ack:
-                    dupACKcount = 0
-                    cwnd += int(MSS * (MSS/cwnd))
-                if dupACKcount == 3:
-                    print("3 Duplicate ACK found !!!!!!")
-                    ssthresh = cwnd//2
-                    dupACKcount = 0
-                    cwnd = MSS
-                    cur_seq = prev_ack
-                #duplicate ack
                 if ack == prev_ack:
                     dupACKcount += 1
-                else:
-                    dupACKcount = 0
+                    
                 #timeout
                 if (time_ms() - st_time) > timeout:
-                    print("Timeout!!!!")
+                    # print("Timeout!!!!")
                     ssthresh = cwnd // 2
                     cwnd = MSS
                     dupACKcount = 0
                     st_time = time_ms()
                     cur_seq = ack
-                    conn_state = STATE.SLOW_START
-
+                    # conn_state = STATE.SLOW_START
+                
+                elif dupACKcount == 3:
+                    # print("3 Duplicate ACK found !!!!!!")
+                    ssthresh = cwnd//2
+                    dupACKcount = 0
+                    cwnd = (cwnd//2) + 3*MSS
+                    cur_seq = prev_ack
+                
+                #new ack
+                elif cur_ack == ack:
+                    dupACKcount = 0
+                    cwnd += MSS
+              
+                
             prev_ack = ack
-            print("ACK:",ack,"rwnd:",rwnd)
-            print("------------------>cwnd:",cwnd,"ssthresh:",ssthresh,
-                  "timeout:",timeout)
-
-
+            # print("ACK:",ack,"rwnd:",rwnd)
+            # print("------------------>cwnd:",cwnd,"ssthresh:",ssthresh,"timeout:",timeout)
+            
+            
             if cur_seq >= FILE_END:
                 break
+    connection.close()
+    file_graph.close()
     print("DATA SENT")
 
 

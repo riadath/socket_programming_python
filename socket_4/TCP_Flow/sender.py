@@ -57,16 +57,16 @@ def retrieve_header(header):
 
 
 
-#test file data
-# file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
-# both victim and villain by the vicissitudes of Fate. This visage, \
-# no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
+# test file data
+file_data = b'In view, a humble vaudevillian veteran, cast vicariously as \
+both victim and villain by the vicissitudes of Fate. This visage, \
+no mere veneer of vanity, is a vestige of the vox populi, now vacant, vanished'
 
-file_data = open("sample.txt","rb")
+# file_data = open("sample.txt","rb")
 
 # print(len(file_data))
 
-FILE_END = 6090
+FILE_END = len(file_data)
 MSS = 200
 HEADER_SIZE = 20
 
@@ -106,8 +106,8 @@ def server_thread(connection):
             #data tranfer phase
             while rwnd >= MSS:
                 try:
-                    # to_send = file_data[cur_seq : (cur_seq+MSS)]
-                    to_send = file_data.read(MSS)
+                    to_send = file_data[cur_seq : (cur_seq+MSS)]
+                    # to_send = file_data.read(MSS)
                     connection.send(
                         create_header(
                             seq=cur_seq,

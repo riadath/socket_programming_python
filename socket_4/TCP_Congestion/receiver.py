@@ -53,14 +53,14 @@ def retrieve_header(header):
 def time_ms():
     return int(time.perf_counter() * 1000)
 
-MSS = 200
+MSS = 8
 HEADER_SIZE = 20
-CONST_rwnd = 1000
+CONST_rwnd = 24
 
 
 def main():
     file_in = open("__INPUT.txt","wb")
-    len_file = 6190 #this is to terminate after file tranfer
+    len_file = 624 #this is to terminate after file tranfer
     file_end = 0   # ideally it would be done through the 
                     # FIN flag in the header
 
@@ -88,11 +88,11 @@ def main():
             header = clientSocket.recv(HEADER_SIZE)
             seq,ack,if_ack,syn,window_size = retrieve_header(header)
 
-            expected_seq = 0
+            expected_seq = seq
 
-            print("EST STATE : ",
-            "SEQ:",seq,"ACK_NO:",ack,"ACK:",
-            if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
+            # print("EST STATE : ",
+            # "SEQ:",seq,"ACK_NO:",ack,"ACK:",
+            # if_ack,"SYN:",syn,"WINDOW SIZE:",window_size)
             
             clientSocket.send(create_header(
                 seq=9000,
@@ -109,36 +109,36 @@ def main():
                 seq_rec,ack,if_ack,syn,window_size = retrieve_header(clientSocket.recv(HEADER_SIZE))
                 data = clientSocket.recv(MSS)
                 ack_toSend = seq_rec
-                
-                
-                print("SEQ:",seq_rec,"EXP SEQ:",expected_seq,
-                      "File Len:",file_end,"buffer_len:",buffer_len)
 
+
+                # print("SEQ:",seq_rec,"EXP SEQ:",expected_seq,
+                #       "File Len:",file_end,"buffer_len:",buffer_len)
+
+                
                 if file_end >= len_file:
-                    # RECV_DATA += data
+                    RECV_DATA += data
                     break
 
             except Exception as e:
 
                 if file_end >= len_file:
-                    # RECV_DATA += data
+                    RECV_DATA += data
                     print("END OF FILE")
                     break
 
 
-                rwnd = CONST_rwnd - buffer_len
+                rwnd = min(MSS,CONST_rwnd - buffer_len)
                 clientSocket.sendall(create_header(
                      ack=expected_seq,
                      if_ack=1,
                      window_size=rwnd
                 )) 
 
-                print(">>>>>",str(e))
+                # print(">>>>>",str(e))
 
-        
             if seq_rec == expected_seq:
-                # RECV_DATA  += data
-                file_in.write(data)
+                RECV_DATA  += data
+                # file_in.write(data)
                 file_end += MSS
 
                 ack_toSend += MSS
@@ -149,7 +149,7 @@ def main():
                 #empty buffer
                 if buffer_len >= CONST_rwnd:
                     buffer_len = 0
-                    print("Cummilitive ACK")
+                    # print("Cummilitive ACK")
                     try:
                         clientSocket.sendall(create_header(
                             ack=ack_toSend+MSS,
@@ -158,18 +158,17 @@ def main():
                         ))
                     except Exception as e:
                         continue
-            elif rnd.randint(0,1) == 0:
+            
+            if rnd.randint(0,20) == 1:
                 for i in range(3):
                     clientSocket.sendall(create_header(
-                        ack=expected_seq+MSS,
-                        if_ack=1,
-                        window_size=rwnd
+                        ack=expected_seq,
+                        if_ack=1
                     ))
-
-    # clientSocket.close()
+    clientSocket.close()
 
     file_in.close()
-    # print(RECV_DATA)   
+    print(RECV_DATA)   
     # print(all_data)              
     print("DATA RECIEVED")
             

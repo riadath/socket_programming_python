@@ -3,7 +3,7 @@ import time
 from dnslib.dns import *
 
 
-SERVER_PORT   = ("192.168.0.5", 20001)
+SERVER_PORT   = ("127.0.0.1", 20001)
 BUFFER          = 1024
 
 def create_query(domain_name):

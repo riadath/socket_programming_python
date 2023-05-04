@@ -4,7 +4,7 @@ from _thread import *
 
 ServerSideSocket = socket.socket()
 
-host = '172.19.31.121'
+host = '127.0.0.1'
 port = 8080
 ThreadCount = 0
 
@@ -21,7 +21,7 @@ def multi_threaded_client(connection):
     connection.send('Server Is Working'.encode())
     while True:
         #send/receive here
-        data = "";
+        data = ""
         try:
             data = connection.recv(1024)
             print('File Name:',data.decode());
@@ -38,15 +38,15 @@ def multi_threaded_client(connection):
         while(line):
             connection.send(line)
             line = file.read(1024)
-            print(line)
+            # print(line)
             if not line or line == b'':
                 break
         file.close()
-
+        print("I am out of the loop")
         if not data:
             break
         
-        connection.close()
+    connection.close()
 
 
 

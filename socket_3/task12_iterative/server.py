@@ -3,7 +3,7 @@ import threading
 from dnslib.dns import *
 import random
 
-IP     = "192.168.0.5"
+IP     = "127.0.0.1"
 PORT   = 20001
 BUFFER  = 1024
 THREAD_NO = 0

@@ -149,7 +149,7 @@ def main():
                 ack=expected_seq + MSS,
                 window_size=rwnd
             ))
-
+    print()
     print("DATA RECIEVED")
             
             

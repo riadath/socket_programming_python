@@ -1,15 +1,176 @@
 import socket
 import tkinter as tk
 import threading
+import socket
+import os
+from _thread import *
+import time
+import random as rnd
+
+
+def create_header(
+        src_port=88,  #2 bytes
+        dest_port=88,  #2 bytes
+        seq=0,  #4 bytes 
+        ack=0,  #4 bytes
+        if_ack=0,  #ack = 1 -> if acknowledgement, 0 otherwise
+        syn=0,  #syn = 1-> if synch req
+        rwnd=0,  #2 bytes
+        checksum=0,  #2 bytes
+        urgent_pointer=0,  #2 bytes
+):
+    return src_port.to_bytes(2) + \
+           dest_port.to_bytes(2) + \
+           seq.to_bytes(4) + \
+           ack.to_bytes(4) + \
+           if_ack.to_bytes(1) + \
+           syn.to_bytes(1) + \
+           rwnd.to_bytes(2) + \
+           checksum.to_bytes(2) + \
+           urgent_pointer.to_bytes(2)
+
+
+#will return a tuple - > (seq_number, ack_number, if_ack, syn, rwnd,urget_pointer)
+def retrieve_header(header):
+    return \
+        int.from_bytes(header[4:8]),\
+        int.from_bytes(header[8:12]),\
+        int.from_bytes(header[12:13]),\
+        int.from_bytes(header[13:14]),\
+        int.from_bytes(header[14:16]),\
+
+
+def send_data(connection, file_data):
+    #connection establishment
+    FILE_END = len(file_data)
+    HEADER_SIZE = 20
+
+    connection.settimeout(1)
+    max_seg_size = 4
+    file_pointer = 0
+    cur_seq = 0
+    rwnd = 200
+    while True:
+        # print("seq:", cur_seq, "rwnd:", rwnd)
+        u_ptr = 0
+        while rwnd >= max_seg_size:
+            try:
+                print("seq:", cur_seq, "rwnd:", rwnd)
+                if cur_seq + max_seg_size >= FILE_END:
+                    to_send = file_data[cur_seq:FILE_END]
+                    connection.send(
+                        create_header(seq=cur_seq, urgent_pointer=2) + to_send)
+                    file_pointer += max_seg_size
+
+                    rwnd -= max_seg_size
+                    cur_seq += max_seg_size
+
+                    break
+                else:
+                    to_send = file_data[cur_seq:(cur_seq + max_seg_size)]
+                    u_ptr = 0 if rwnd - max_seg_size >= max_seg_size else 1
+
+                    connection.send(
+                        create_header(seq=cur_seq, urgent_pointer=u_ptr) +
+                        to_send)
+                    file_pointer += max_seg_size
+
+                    rwnd -= max_seg_size
+                    cur_seq += max_seg_size
+
+                while u_ptr == 1:
+                    # print("waiting for ack")
+                    try:
+                        seq, ack, if_ack, syn, rwnd = retrieve_header(
+                            connection.recv(HEADER_SIZE))
+                        cur_seq = ack
+                        u_ptr = 0
+                        break
+                    except Exception as e:
+                        continue
+
+            except Exception as e:
+                break
+
+        if cur_seq >= FILE_END:
+            break
+
+    print("Data sent successfully")
+
+
+def receive_data(connection):
+    print("Data receiving started")
+    HEADER_SIZE = 20
+    CONST_rwnd = 200
+
+    connection.settimeout(1)
+
+    max_seg_size = 4
+    recv_data = b''
+    expected_seq = 0
+    rwnd = CONST_rwnd
+    urgent_pointer = 0
+
+    seq, ack, data = 0, 0, b''
+    while True:
+        try:
+            if urgent_pointer == 1:
+                rwnd += rnd.randint(5,7) * max_seg_size
+                rwnd = min(rwnd, CONST_rwnd)
+                while urgent_pointer == 1:
+                    try:
+                        connection.send(create_header(
+                            seq=seq,
+                            ack=expected_seq + max_seg_size,
+                            rwnd=rwnd
+                        ))
+                        urgent_pointer = 0
+                        break
+                    except Exception as e:
+                        # print('<<<',e)
+                        continue
+            header = connection.recv(HEADER_SIZE)
+            urgent_pointer = int.from_bytes(header[18:20])
+            seq, ack, if_ack, syn, window_size = retrieve_header(header)
+
+            data = connection.recv(max_seg_size)
+
+            recv_data += data
+            # print("urgent pointer",urgent_pointer,"seq:", seq, "ack:", ack, "rwnd:", rwnd, "data:",
+            #       data.decode())
+
+            rwnd -= max_seg_size
+            expected_seq += max_seg_size
+
+            
+            
+            if urgent_pointer == 2:
+                break
+
+        except Exception as e:
+            
+            try:
+                connection.send(create_header(
+                                seq=seq,
+                                ack=expected_seq + max_seg_size,
+                                rwnd=rwnd
+                            ))
+                urgent_pointer = 0
+            except:
+                pass
+            # print('>>>',e)
+            pass
+
+    print(recv_data,'End of data transfer')
+    return recv_data
 
 
 class ServerGUI:
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.socket = None
-        self.clients = []
-        
+        self.ServerSocket = None
+        self.connection = None
         # create the GUI
         self.root = tk.Tk()
         self.root.title("Chat App")
@@ -19,7 +180,7 @@ class ServerGUI:
         message_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # create the messages label
-        messages_label = tk.Label(message_frame, text="Messages", font=("Arial", 14, "bold"))
+        messages_label = tk.Label(message_frame, text="S1", font=("Arial", 14, "bold"))
         messages_label.pack(pady=(0,10))
         
         # create the messages text widget
@@ -45,45 +206,50 @@ class ServerGUI:
         # bind the enter key to send the message
         self.root.bind("<Return>", lambda event: self.send_message())
         
-        # start the server in a new thread
-        threading.Thread(target=self.start_server).start()
+        # connect to the server
+        self.connect_to_server()
+    def connect_to_server(self):
+        self.ServerSocket = socket.socket()
+        self.ServerSocket.bind((self.host,self.port))
+        self.ServerSocket.listen(5)
+        self.connection, address = self.ServerSocket.accept()
+        
+        res = self.connection.recv(1024).decode()
+        print(res, 'connected')
+        
+        threading.Thread(target=self.receive_message).start()
 
-    def start_server(self):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.bind((self.host, self.port))
-        self.socket.listen(5)
-        while True:
-            client_socket, address = self.socket.accept()
-            self.clients.append(client_socket)
-            threading.Thread(target=self.receive_message, args=(client_socket,)).start()
 
-    def receive_message(self, client_socket):
+
+    def receive_message(self):
         while True:
             try:
-                data = client_socket.recv(1024).decode()
-                self.messages.insert(tk.END, 'CLIENT:'+data+'\n')
+                # data = self.connection.recv(1024).decode()
+                data = receive_data(self.connection).decode()
+                self.messages.insert(tk.END, 'someone else: '+data+'\n')
                 self.messages.see(tk.END)
-            except:
-                self.clients.remove(client_socket)
-                break
+            except Exception as e:
+                print(e,type(e))
+                continue
 
     def send_message(self):
         message = self.entry.get()
+        print(message, 'sent')
         if message:
-            for client_socket in self.clients:
-                try:
-                    client_socket.send(message.encode())
-                except:
-                    self.clients.remove(client_socket)
-            self.messages.insert(tk.END, "SERVER: {}\n".format(message))
+            try:
+                self.connection.send(message.encode())
+                # send_data(self.connection, message.encode())
+            except:
+                self.on_close()
+            self.messages.insert(tk.END, "me: {}\n".format(message))
             self.messages.see(tk.END)
             self.entry.delete(0, tk.END)
 
     def on_close(self):
-        self.socket.close()
+        self.ServerSocket.close()
         self.root.destroy()
 
 
 if __name__ == "__main__":
-    server_gui = ServerGUI("127.0.0.1", 869)
-    server_gui.root.mainloop()
+    client_gui = ServerGUI("127.0.0.1", 869)
+    client_gui.root.mainloop()

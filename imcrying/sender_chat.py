@@ -24,10 +24,6 @@ def setup_connection():
 #____________________________
 
 
-def time_ms():
-    return int(time.perf_counter() * 1000)
-
-
 def create_header(
         src_port=88,  #2 bytes
         dest_port=88,  #2 bytes

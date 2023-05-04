@@ -50,34 +50,54 @@ def retrieve_header(header):
         int.from_bytes(header[14:16])
 
 
-#send_data fucntion
 def send_data(connection, file_data):
-    print(len(file_data), "bytes to be sent")
     #connection establishment
     FILE_END = len(file_data)
     HEADER_SIZE = 20
 
-    max_seg_size = 8
+    connection.settimeout(0.001)
+    max_seg_size = 4
     file_pointer = 0
     cur_seq = 0
-    rwnd = 100
-    connection.send(create_header(seq=len(file_data)))
+    rwnd = 20
     while True:
         # print("seq:", cur_seq, "rwnd:", rwnd)
+        u_ptr = 0
         while rwnd >= max_seg_size:
-            if cur_seq + max_seg_size >= FILE_END:
-                to_send = file_data[cur_seq:FILE_END]
-                connection.send(create_header(seq=cur_seq, ) + to_send)
-                file_pointer += max_seg_size
-                rwnd -= max_seg_size
-                cur_seq += max_seg_size
-                break
             try:
-                to_send = file_data[cur_seq:(cur_seq + max_seg_size)]
-                connection.send(create_header(seq=cur_seq, ) + to_send)
-                file_pointer += max_seg_size
-                rwnd -= max_seg_size
-                cur_seq += max_seg_size
+                # print("seq:", cur_seq, "rwnd:", rwnd)
+                if cur_seq + max_seg_size >= FILE_END:
+                    to_send = file_data[cur_seq:FILE_END]
+                    connection.send(
+                        create_header(seq=cur_seq, urgent_pointer=2) + to_send)
+                    file_pointer += max_seg_size
+
+                    rwnd -= max_seg_size
+                    cur_seq += max_seg_size
+
+                    break
+                else:
+                    to_send = file_data[cur_seq:(cur_seq + max_seg_size)]
+                    u_ptr = 0 if rwnd - max_seg_size >= max_seg_size else 1
+
+                    connection.send(
+                        create_header(seq=cur_seq, urgent_pointer=u_ptr) +
+                        to_send)
+                    file_pointer += max_seg_size
+
+                    rwnd -= max_seg_size
+                    cur_seq += max_seg_size
+
+                while u_ptr == 1:
+                    # print("waiting for ack")
+                    try:
+                        seq, ack, if_ack, syn, rwnd = retrieve_header(
+                            connection.recv(HEADER_SIZE))
+                        cur_seq = ack
+                        u_ptr = 0
+                        break
+                    except Exception as e:
+                        continue
 
             except Exception as e:
                 break
@@ -85,30 +105,39 @@ def send_data(connection, file_data):
         if cur_seq >= FILE_END:
             break
 
-        seq, ack, if_ack, syn, rwnd = retrieve_header(
-            connection.recv(HEADER_SIZE))
-        cur_seq = ack
-        print("ack:", ack, "rwnd:", rwnd)
     print("Data sent successfully")
-
 
 def receive_data(connection):
     # print("Data receiving started")
     HEADER_SIZE = 20
     CONST_rwnd = 20
 
-    connection.settimeout(1)
+    connection.settimeout(0.001)
 
-    max_seg_size = 8
+    max_seg_size = 4
     recv_data = b''
     expected_seq = 0
     rwnd = CONST_rwnd
     urgent_pointer = 0
 
     seq, ack, data = 0, 0, b''
-    connection.send('230jkl3k93k34'.encode())
     while True:
         try:
+            if urgent_pointer == 1:
+                rwnd += rnd.randint(5,7) * max_seg_size
+                rwnd = min(rwnd, CONST_rwnd)
+                while urgent_pointer == 1:
+                    try:
+                        connection.send(create_header(
+                            seq=seq,
+                            ack=expected_seq + max_seg_size,
+                            rwnd=rwnd
+                        ))
+                        urgent_pointer = 0
+                        break
+                    except Exception as e:
+                        # print('<<<',e)
+                        continue
             header = connection.recv(HEADER_SIZE)
             urgent_pointer = int.from_bytes(header[18:20])
             seq, ack, if_ack, syn, window_size = retrieve_header(header)
@@ -116,33 +145,30 @@ def receive_data(connection):
             data = connection.recv(max_seg_size)
 
             recv_data += data
-            print("seq:", seq, "ack:", ack, "rwnd:", rwnd, "data:",
-                  data.decode())
+            # print("urgent pointer",urgent_pointer,"seq:", seq, "ack:", ack, "rwnd:", rwnd, "data:",
+            #       data.decode())
 
             rwnd -= max_seg_size
             expected_seq += max_seg_size
 
-            if urgent_pointer == 1:
-                print('rwmd increased', rwnd)
-                rwnd += rnd.randint(5, 7) * max_seg_size
-                rwnd = min(rwnd, CONST_rwnd)
-                while urgent_pointer == 1:
-                    try:
-                        connection.send(
-                            create_header(seq=ack,
-                                        ack=expected_seq + max_seg_size,
-                                        window_size=rwnd))
-                        urgent_pointer = 0
-                        break
-                    except Exception as e:
-                        print("Exception in sending ack")
-                        pass
-            elif urgent_pointer == 2:
+            
+            
+            if urgent_pointer == 2:
                 break
 
         except Exception as e:
-            print("Exception in receiving data")
-            continue
+            
+            try:
+                connection.send(create_header(
+                                seq=seq,
+                                ack=expected_seq + max_seg_size,
+                                rwnd=rwnd
+                            ))
+                urgent_pointer = 0
+            except:
+                pass
+            # print('>>>',e)
+            pass
 
     print('End of data transfer')
     return recv_data
